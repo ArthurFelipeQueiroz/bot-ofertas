@@ -3,13 +3,8 @@ import schedule
 import time
 import random
 import os
+import xml.etree.ElementTree as ET
 from datetime import datetime
-
-# Token de usuário do Mercado Livre (válido por 6 horas)
-ML_TOKEN = "APP_USR-557749699288936-052516-b8ea50dafd0c38e3c7ddf4fa6b4cabe5-584022277"
-ML_APP_ID  = "557749699288936"
-ML_SECRET  = "02WHbfviPxhjMMGKgRs8Ab78Laj2X5K8"
-ML_REFRESH = ""  # será preenchido automaticamente
 
 EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
@@ -20,84 +15,65 @@ HORA_INICIO     = 8
 HORA_FIM        = 22
 INTERVALO_HORAS = 2
 
-token_atual = ML_TOKEN
-
-def obter_token_client():
-    """Fallback: token via client_credentials."""
-    try:
-        r = requests.post("https://api.mercadolibre.com/oauth/token", data={
-            "grant_type": "client_credentials",
-            "client_id": ML_APP_ID,
-            "client_secret": ML_SECRET
-        }, timeout=10)
-        return r.json().get("access_token")
-    except:
-        return None
-
-def buscar_produto():
-    global token_atual
-    buscas = [
-        "smartphone", "notebook", "smart tv",
-        "airfryer", "perfume", "relogio",
-        "iphone", "samsung", "aspirador", "cafeteira"
+def buscar_oferta():
+    """Busca ofertas do RSS público do Promobit."""
+    feeds = [
+        "https://www.promobit.com.br/feed/",
+        "https://www.pelando.com.br/feed/",
     ]
-    busca = random.choice(buscas)
 
-    headers = {"Authorization": f"Bearer {token_atual}"}
-    url = "https://api.mercadolibre.com/sites/MLB/search"
-    params = {"q": busca, "sort": "relevance", "limit": 50, "condition": "new"}
+    for feed_url in feeds:
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(feed_url, headers=headers, timeout=10)
+            print(f"Feed {feed_url}: {r.status_code}")
 
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        print(f"Status: {r.status_code}")
+            if r.status_code != 200:
+                continue
 
-        # Se token expirou, tenta client_credentials
-        if r.status_code in [401, 403]:
-            print("Token expirado, tentando renovar...")
-            token_atual = obter_token_client()
-            if token_atual:
-                headers = {"Authorization": f"Bearer {token_atual}"}
-                r = requests.get(url, params=params, headers=headers, timeout=10)
+            root = ET.fromstring(r.content)
+            items = root.findall(".//item")
+            print(f"📰 {len(items)} ofertas no feed")
 
-        data = r.json()
-        results = data.get("results", [])
-        print(f"🔎 '{busca}' — {len(results)} resultados")
+            if not items:
+                continue
 
-        if not results:
-            return None
+            item = random.choice(items)
+            titulo = item.findtext("title", "Oferta")
+            link   = item.findtext("link", "")
+            desc   = item.findtext("description", "")
 
-        com_desconto = [
-            p for p in results
-            if p.get("original_price") and p["original_price"] > p["price"]
-            and p.get("thumbnail")
-        ]
-        lista = com_desconto if com_desconto else [p for p in results if p.get("thumbnail")]
-        return random.choice(lista) if lista else None
+            # Tenta extrair imagem da descrição
+            imagem = ""
+            if 'src="' in desc:
+                try:
+                    imagem = desc.split('src="')[1].split('"')[0]
+                except:
+                    pass
 
-    except Exception as e:
-        print(f"Erro busca: {e}")
-        return None
+            # Imagem padrão se não encontrar
+            if not imagem or not imagem.startswith("http"):
+                imagem = "https://promobit.com.br/assets/images/logo-promobit.png"
 
-def montar_mensagem(produto):
-    nome        = produto.get("title", "Produto")
-    preco_atual = produto.get("price", 0)
-    preco_orig  = produto.get("original_price") or preco_atual
-    imagem      = produto.get("thumbnail", "").replace("I.jpg", "O.jpg")
-    link        = produto.get("permalink", "")
+            return {
+                "title": titulo,
+                "link": link,
+                "image": imagem
+            }
 
-    desconto = 0
-    if preco_orig and preco_orig > preco_atual:
-        desconto = round((1 - preco_atual / preco_orig) * 100)
+        except Exception as e:
+            print(f"Erro feed: {e}")
+            continue
 
-    texto = f"🔥 *{nome}*\n\n"
-    if desconto > 0:
-        texto += f"De: R$ {preco_orig:.2f}\n"
-    texto += f"💰 Por Apenas: *R$ {preco_atual:.2f}*"
-    if desconto > 0:
-        texto += f" (*{desconto}% OFF*)"
-    if produto.get("shipping", {}).get("free_shipping"):
-        texto += "\n✅ *Frete Grátis*"
-    texto += f"\n\n🛒 Comprar agora: {link}"
+    return None
+
+def montar_mensagem(oferta):
+    titulo = oferta.get("title", "Oferta imperdível")
+    link   = oferta.get("link", "")
+    imagem = oferta.get("image", "")
+
+    texto  = f"🔥 *{titulo}*\n\n"
+    texto += f"🛒 Ver oferta: {link}"
 
     return texto, imagem
 
@@ -126,14 +102,13 @@ def executar():
         return
 
     print(f"\n🔍 Buscando oferta... ({datetime.now().strftime('%d/%m/%Y %H:%M')})")
-    produto = buscar_produto()
-    if not produto:
-        print("❌ Nenhum produto encontrado.")
+    oferta = buscar_oferta()
+    if not oferta:
+        print("❌ Nenhuma oferta encontrada.")
         return
 
-    texto, imagem = montar_mensagem(produto)
-    print(f"📦 {produto.get('title', '')}")
-    print(f"💰 R$ {produto.get('price', 0):.2f}")
+    texto, imagem = montar_mensagem(oferta)
+    print(f"📦 {oferta.get('title', '')}")
     enviar_whatsapp(texto, imagem)
 
 if __name__ == "__main__":
