@@ -5,47 +5,60 @@ import random
 import os
 from datetime import datetime
 
+# Token de usuário do Mercado Livre (válido por 6 horas)
+ML_TOKEN = "APP_USR-557749699288936-052516-b8ea50dafd0c38e3c7ddf4fa6b4cabe5-584022277"
 ML_APP_ID  = "557749699288936"
 ML_SECRET  = "02WHbfviPxhjMMGKgRs8Ab78Laj2X5K8"
+ML_REFRESH = ""  # será preenchido automaticamente
 
 EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf"
+GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
 
-GRUPO_ID = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
-
-HORA_INICIO = 8
-HORA_FIM    = 22
+HORA_INICIO     = 8
+HORA_FIM        = 22
 INTERVALO_HORAS = 2
 
-def obter_token():
-    url = "https://api.mercadolibre.com/oauth/token"
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": ML_APP_ID,
-        "client_secret": ML_SECRET
-    }
+token_atual = ML_TOKEN
+
+def obter_token_client():
+    """Fallback: token via client_credentials."""
     try:
-        r = requests.post(url, data=data, timeout=10)
-        token = r.json().get("access_token")
-        print("✅ Token obtido!" if token else f"❌ Erro token: {r.json()}")
-        return token
-    except Exception as e:
-        print(f"Erro token: {e}")
+        r = requests.post("https://api.mercadolibre.com/oauth/token", data={
+            "grant_type": "client_credentials",
+            "client_id": ML_APP_ID,
+            "client_secret": ML_SECRET
+        }, timeout=10)
+        return r.json().get("access_token")
+    except:
         return None
 
-def buscar_produto(token):
+def buscar_produto():
+    global token_atual
     buscas = [
         "smartphone", "notebook", "smart tv",
         "airfryer", "perfume", "relogio",
         "iphone", "samsung", "aspirador", "cafeteira"
     ]
     busca = random.choice(buscas)
-    url = f"https://api.mercadolibre.com/sites/MLB/search?q={busca}&sort=relevance&limit=50&access_token={token}"
+
+    headers = {"Authorization": f"Bearer {token_atual}"}
+    url = "https://api.mercadolibre.com/sites/MLB/search"
+    params = {"q": busca, "sort": "relevance", "limit": 50, "condition": "new"}
 
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, params=params, headers=headers, timeout=10)
         print(f"Status: {r.status_code}")
+
+        # Se token expirou, tenta client_credentials
+        if r.status_code in [401, 403]:
+            print("Token expirado, tentando renovar...")
+            token_atual = obter_token_client()
+            if token_atual:
+                headers = {"Authorization": f"Bearer {token_atual}"}
+                r = requests.get(url, params=params, headers=headers, timeout=10)
+
         data = r.json()
         results = data.get("results", [])
         print(f"🔎 '{busca}' — {len(results)} resultados")
@@ -113,11 +126,7 @@ def executar():
         return
 
     print(f"\n🔍 Buscando oferta... ({datetime.now().strftime('%d/%m/%Y %H:%M')})")
-    token = obter_token()
-    if not token:
-        return
-
-    produto = buscar_produto(token)
+    produto = buscar_produto()
     if not produto:
         print("❌ Nenhum produto encontrado.")
         return
