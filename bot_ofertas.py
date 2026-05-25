@@ -2,6 +2,7 @@ import requests
 import schedule
 import time
 import random
+import os
 from datetime import datetime
 
 ML_APP_ID  = "557749699288936"
@@ -11,7 +12,7 @@ EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf"
 
-GRUPO_ID = "ID_DO_GRUPO@g.us"  # ← substitua pelo ID do seu grupo
+GRUPO_ID = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
 
 HORA_INICIO = 8
 HORA_FIM    = 22
@@ -128,6 +129,7 @@ def executar():
 
 if __name__ == "__main__":
     print("🤖 Bot de Ofertas WhatsApp iniciado!")
+    print(f"📱 Grupo: {GRUPO_ID}")
     print(f"⏰ Enviando a cada {INTERVALO_HORAS}h entre {HORA_INICIO}h e {HORA_FIM}h\n")
     executar()
     schedule.every(INTERVALO_HORAS).hours.do(executar)
