@@ -32,16 +32,41 @@ LINKS_AFILIADOS = [
 ]
 
 def extrair_id_produto(url):
-    """Resolve o link curto e extrai o ID MLB do produto."""
+    """Resolve o link curto e extrai o ID MLB do produto seguindo todos os redirecionamentos."""
     try:
-        r = requests.get(url, allow_redirects=True, timeout=10,
-                        headers={"User-Agent": "Mozilla/5.0"})
-        url_final = r.url
-        print(f"URL final: {url_final}")
-        match = re.search(r'(MLB-?\d+)', url_final)
+        session = requests.Session()
+        session.max_redirects = 10
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml"
+        }
+
+        # Segue todos os redirecionamentos e verifica cada URL
+        resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
+
+        # Verifica todas as URLs do histórico de redirecionamentos
+        urls_visitadas = [r.url for r in resp.history] + [resp.url]
+        print(f"URLs visitadas: {len(urls_visitadas)}")
+
+        for u in urls_visitadas:
+            print(f"  → {u[:80]}")
+            match = re.search(r'MLB-?(\d+)', u)
+            if match:
+                item_id = "MLB" + match.group(1)
+                print(f"✅ ID encontrado: {item_id}")
+                return item_id
+
+        # Tenta extrair do conteúdo HTML da página
+        html = resp.text
+        match = re.search(r'MLB-?(\d{6,12})', html)
         if match:
-            return match.group(1).replace("-", "")
+            item_id = "MLB" + match.group(1)
+            print(f"✅ ID encontrado no HTML: {item_id}")
+            return item_id
+
+        print(f"URL final: {resp.url}")
         return None
+
     except Exception as e:
         print(f"Erro ao resolver URL: {e}")
         return None
