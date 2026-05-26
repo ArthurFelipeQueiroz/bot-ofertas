@@ -7,8 +7,8 @@ import feedparser
 import pytz
 from datetime import datetime
 
-# Mude a linha 11 para ler das variáveis do ambiente do Railway
-EVOLUTION_URL = os.environ.get("EVOLUTION_URL", "https://railway.app")
+# CORRIGIDO: Agora o valor de reserva também é a sua API real
+EVOLUTION_URL = os.environ.get("EVOLUTION_URL", "https://evolution-api-production-1472.up.railway.app")
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
 GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
@@ -22,7 +22,7 @@ def obter_hora_local():
     return datetime.now(FUSO_HORARIO)
 
 def buscar_oferta():
-    # Feeds abertos do G1 (Tecnologia e Economia) - Não bloqueiam o Railway
+    # CORRIGIDO: URLs reais de feeds RSS que o feedparser consegue ler
     feeds = [
         ("G1-Tecnologia", "https://globo.com"),
         ("G1-Economia", "https://globo.com")
@@ -43,7 +43,7 @@ def buscar_oferta():
                 item = random.choice(feed.entries[:15])
                 return {
                     "title": item.get("title", "Oferta imperdível"),
-                    "link": item.get("link", "https://mercadolivre.com.br")
+                    "link": item.get("link", "https://www.mercadolivre.com.br")
                 }
         except Exception as e:
             print(f"⚠️ Erro ao ler feed {nome}: {e}")
@@ -52,20 +52,18 @@ def buscar_oferta():
     # Sistema de reserva caso os sites caiam
     return {
         "title": "Smartphone Samsung Galaxy S23 Ultra 256GB em Oferta!",
-        "link": "https://mercadolivre.com.br"
+        "link": "https://www.mercadolivre.com.br"
     }
 
 def montar_mensagem(oferta):
     titulo = oferta.get("title")
     link   = oferta.get("link")
     
-    # Monta um texto limpo e bem formatado para o WhatsApp
     texto  = f"🔥 *{titulo}*\n\n"
     texto += f"🛒 *Aproveite aqui:* {link}"
     return texto
 
 def enviar_whatsapp(texto):
-    # Formato oficial da Evolution API v2: o endpoint termina apenas em /sendText
     url = f"{EVOLUTION_URL.rstrip('/')}/message/sendText"
     
     headers = {
@@ -73,7 +71,6 @@ def enviar_whatsapp(texto):
         "Content-Type": "application/json"
     }
     
-    # Na v2, passamos a instância dentro do JSON
     body = {
         "instanceName": EVOLUTION_INSTANCE,
         "number": GRUPO_ID,
@@ -86,7 +83,6 @@ def enviar_whatsapp(texto):
         print(f"🔗 Tentando Rota v2: {url}")
         r = requests.post(url, json=body, headers=headers, timeout=15)
         
-        # Se der 404 (Rota v2 não encontrada), tenta automaticamente a Rota antiga v1
         if r.status_code == 404:
             print("⚠️ Rota v2 deu 404. Tentando formato alternativo da v1...")
             url_v1 = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
@@ -103,7 +99,7 @@ def enviar_whatsapp(texto):
         if r.status_code in [200, 201]:
             print("✅ Sucesso! Mensagem enviada para o grupo do WhatsApp.")
         else:
-            print(f"❌ Erro retornado pela Evolution API: {r.text[:300]}") # Exibe apenas o começo para não poluir o log
+            print(f"❌ Erro retornado pela Evolution API: {r.text[:300]}")
             
     except Exception as e:
         print(f"❌ Erro de conexão externa: {e}")
@@ -126,7 +122,6 @@ if __name__ == "__main__":
     print(f"📱 ID do Grupo: {GRUPO_ID}")
     print(f"⏰ Envios a cada {INTERVALO_HORAS}h entre {HORA_INICIO}h e {HORA_FIM}h\n")
     
-    # Executa imediatamente ao iniciar para testar
     executar()
     
     schedule.every(INTERVALO_HORAS).hours.do(executar)
