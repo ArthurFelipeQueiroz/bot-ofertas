@@ -3,7 +3,7 @@ import schedule
 import time
 import random
 import os
-import xml.etree.ElementTree as ET
+import re
 from datetime import datetime
 
 EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
@@ -15,66 +15,62 @@ HORA_INICIO     = 8
 HORA_FIM        = 22
 INTERVALO_HORAS = 2
 
-# RSS públicos do Mercado Livre por categoria
 FEEDS_ML = [
     "https://lista.mercadolivre.com.br/eletronicos-audio-video/smartphones-celulares/_Discount_10-100_RSS",
     "https://lista.mercadolivre.com.br/informatica/notebooks-acessorios/notebooks/_Discount_10-100_RSS",
     "https://lista.mercadolivre.com.br/eletrodomesticos/_Discount_10-100_RSS",
-    "https://lista.mercadolivre.com.br/esportes-fitness/_Discount_10-100_RSS",
 ]
+
+def extrair_entre(texto, inicio, fim):
+    try:
+        return texto.split(inicio)[1].split(fim)[0].strip()
+    except:
+        return ""
 
 def buscar_oferta():
     feed_url = random.choice(FEEDS_ML)
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         r = requests.get(feed_url, headers=headers, timeout=15)
         print(f"Feed ML: {r.status_code}")
 
         if r.status_code != 200:
             return None
 
-        root = ET.fromstring(r.content)
-        items = root.findall(".//item")
-        print(f"📰 {len(items)} itens encontrados")
+        # Parse manual sem XML para evitar erros de encoding
+        conteudo = r.text
 
-        if not items:
+        # Divide em itens
+        itens = conteudo.split("<item>")[1:]
+        print(f"📰 {len(itens)} itens encontrados")
+
+        if not itens:
             return None
 
-        item = random.choice(items[:20])
-        titulo = item.findtext("title", "Oferta")
-        link   = item.findtext("link", "")
-        desc   = item.findtext("description", "")
+        item = random.choice(itens[:20])
 
-        # Extrai imagem
+        titulo = extrair_entre(item, "<title>", "</title>")
+        titulo = titulo.replace("<![CDATA[", "").replace("]]>", "").strip()
+
+        link = extrair_entre(item, "<link>", "</link>")
+        if not link:
+            link = extrair_entre(item, "<guid>", "</guid>")
+
+        desc = extrair_entre(item, "<description>", "</description>")
+
+        # Extrai imagem da descrição
         imagem = ""
-        for tag in ["enclosure", "{http://search.yahoo.com/mrss/}thumbnail"]:
-            el = item.find(tag)
-            if el is not None:
-                imagem = el.get("url", "")
-                break
+        if 'src="' in desc:
+            imagem = extrair_entre(desc, 'src="', '"')
+        if not imagem or not imagem.startswith("http"):
+            imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
 
-        if not imagem and 'src="' in desc:
-            try:
-                imagem = desc.split('src="')[1].split('"')[0]
-            except:
-                pass
-
-        # Extrai preço do título se possível
+        # Extrai preço
         preco = ""
         if "R$" in titulo:
-            try:
-                preco = "R$" + titulo.split("R$")[1].split(" ")[0]
-            except:
-                pass
+            preco = "R$" + extrair_entre(titulo, "R$", " ")
 
-        return {
-            "title": titulo,
-            "link": link,
-            "image": imagem,
-            "preco": preco
-        }
+        return {"title": titulo, "link": link, "image": imagem, "preco": preco}
 
     except Exception as e:
         print(f"Erro feed: {e}")
@@ -83,13 +79,13 @@ def buscar_oferta():
 def montar_mensagem(oferta):
     titulo = oferta.get("title", "Oferta imperdível")
     link   = oferta.get("link", "")
-    imagem = oferta.get("image", "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png")
+    imagem = oferta.get("image", "")
     preco  = oferta.get("preco", "")
 
     texto  = f"🔥 *{titulo}*\n\n"
     if preco:
         texto += f"💰 *{preco}*\n\n"
-    texto += f"🛒 Ver oferta no Mercado Livre: {link}"
+    texto += f"🛒 Ver oferta: {link}"
 
     return texto, imagem
 
