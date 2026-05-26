@@ -7,8 +7,8 @@ import feedparser
 import pytz
 from datetime import datetime
 
-# Configurações da Evolution API
-EVOLUTION_URL      = "http://railway.internal"
+# Usando o domínio público exato que estava na aba Settings da sua API
+EVOLUTION_URL      = "https://railway.app" 
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
 GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
@@ -65,10 +65,8 @@ def montar_mensagem(oferta):
     return texto
 
 def enviar_whatsapp(texto):
-    # CORREÇÃO DA ROTA: Na Evolution API v1/v2, o padrão correto é '/message/sendText'
-    # Sem a instância no final da URL, ela vai no corpo do JSON ou como parâmetro.
-    # Vamos testar o formato oficial mais comum das rotas da Evolution:
-    url = f"{EVOLUTION_URL}/message/sendText"
+    # Constrói a rota exata: https://railway.app
+    url = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
     
     headers = {
         "apikey": EVOLUTION_APIKEY,
@@ -76,29 +74,22 @@ def enviar_whatsapp(texto):
     }
     
     body = {
-        "instanceName": EVOLUTION_INSTANCE, # Adicionado explicitamente para APIs mais novas
         "number": GRUPO_ID,
         "text": texto,
-        "delay": 1200,
+        "delay": 200,
         "linkPreview": True
     }
     
     try:
+        print(f"🔗 Conectando em: {url}")
         r = requests.post(url, json=body, headers=headers, timeout=15)
-        print(f"Status da API: {r.status_code} | Resposta: {r.text}")
-        
-        # Se ainda der 404, tentamos a rota alternativa antiga da v1
-        if r.status_code == 404:
-            print("⚠️ Tentando rota alternativa v1...")
-            url_alt = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
-            # Algumas versões esperam apenas o number e text se a instância já está na URL
-            body_alt = {"number": GRUPO_ID, "text": texto}
-            r_alt = requests.post(url_alt, json=body_alt, headers=headers, timeout=15)
-            print(f"Status Rota Alt: {r_alt.status_code} | Resposta: {r_alt.text}")
-            
+        print(f"Status da API: {r.status_code}")
+        if r.status_code in [200, 201]:
+            print("✅ Sucesso! Mensagem enviada para o grupo do WhatsApp.")
+        else:
+            print(f"❌ Erro retornado pela Evolution API: {r.text}")
     except Exception as e:
-        print(f"❌ Erro de conexão com a Evolution API: {e}")
-
+        print(f"❌ Erro de conexão externa: {e}")
 
 def executar():
     agora = obter_hora_local()
