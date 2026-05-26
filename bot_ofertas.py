@@ -72,30 +72,92 @@ def extrair_id_produto(url):
         return None
 
 def buscar_detalhes_produto(item_id):
-    """Busca detalhes do produto pela API do ML."""
-    token = os.environ.get("ML_ACCESS_TOKEN", "APP_USR-3284935202043125-052615-6b8af8244d1406c3727b311eea529f7e-584022277")
+    """Busca detalhes do produto via scraping da página do ML."""
+    import json as jsonlib
 
-    tentativas = [
-        # Tenta com token no header
-        {"url": f"https://api.mercadolibre.com/items/{item_id}", "headers": {"Authorization": f"Bearer {token}"}},
-        # Tenta com token na URL
-        {"url": f"https://api.mercadolibre.com/items/{item_id}?access_token={token}", "headers": {}},
-        # Tenta sem autenticação
-        {"url": f"https://api.mercadolibre.com/items/{item_id}", "headers": {}},
-    ]
+    url = f"https://www.mercadolivre.com.br/p/{item_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+    }
 
-    for t in tentativas:
-        try:
-            r = requests.get(t["url"], headers=t["headers"], timeout=10)
-            print(f"Status API ML: {r.status_code}")
-            if r.status_code == 200:
-                return r.json()
-        except Exception as e:
-            print(f"Erro: {e}")
-            continue
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        print(f"Status página ML: {r.status_code}")
 
-    print("❌ Todas as tentativas falharam.")
-    return None
+        if r.status_code != 200:
+            # Tenta URL alternativa
+            url2 = f"https://www.mercadolivre.com.br/produto/{item_id}"
+            r = requests.get(url2, headers=headers, timeout=15)
+            print(f"Status página alt: {r.status_code}")
+
+        html = r.text
+
+        # Extrai dados do JSON-LD
+        if '"@type":"Product"' in html or '"@type": "Product"' in html:
+            try:
+                inicio = html.find('"@type":"Product"')
+                if inicio == -1:
+                    inicio = html.find('"@type": "Product"')
+                bloco = html[max(0, inicio-200):inicio+2000]
+                # Extrai nome
+                nome = ""
+                if '"name":"' in bloco:
+                    nome = bloco.split('"name":"')[1].split('"')[0]
+                # Extrai preço
+                preco = 0
+                if '"price":' in bloco:
+                    preco_str = bloco.split('"price":')[1].split(',')[0].strip().strip('"')
+                    try: preco = float(preco_str)
+                    except: pass
+                # Extrai imagem
+                imagem = ""
+                if '"image":"' in bloco:
+                    imagem = bloco.split('"image":"')[1].split('"')[0]
+                elif '"image":["' in bloco:
+                    imagem = bloco.split('"image":["')[1].split('"')[0]
+
+                if nome:
+                    print(f"✅ Dados extraídos do JSON-LD: {nome[:50]}")
+                    return {"title": nome, "price": preco, "original_price": None,
+                            "thumbnail": imagem, "shipping": {"free_shipping": "Frete grátis" in html}}
+            except Exception as e:
+                print(f"Erro JSON-LD: {e}")
+
+        # Extrai título diretamente do HTML
+        titulo = ""
+        if '<h1 class="ui-pdp-title">' in html:
+            titulo = html.split('<h1 class="ui-pdp-title">')[1].split('</h1>')[0].strip()
+        elif '<title>' in html:
+            titulo = html.split('<title>')[1].split('</title>')[0].split('|')[0].strip()
+
+        # Extrai preço
+        preco = 0
+        if '"price":' in html:
+            try:
+                trecho = html.split('"price":')[1][:20]
+                preco = float(trecho.split(',')[0].strip())
+            except: pass
+
+        # Extrai imagem
+        imagem = ""
+        if 'https://http2.mlstatic.com' in html:
+            try:
+                imagem = 'https://http2.mlstatic.com' + html.split('https://http2.mlstatic.com')[1].split('"')[0]
+            except: pass
+
+        if titulo:
+            print(f"✅ Dados extraídos do HTML: {titulo[:50]}")
+            return {"title": titulo, "price": preco, "original_price": None,
+                    "thumbnail": imagem, "shipping": {"free_shipping": "Frete grátis" in html}}
+
+        print("❌ Não foi possível extrair dados da página.")
+        return None
+
+    except Exception as e:
+        print(f"Erro scraping: {e}")
+        return None
 
 def buscar_oferta(link_afiliado):
     """Busca os dados do produto a partir do link de afiliado."""
