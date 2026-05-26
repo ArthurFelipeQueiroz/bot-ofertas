@@ -72,32 +72,30 @@ def extrair_id_produto(url):
         return None
 
 def buscar_detalhes_produto(item_id):
-    """Busca detalhes do produto pela API do ML com token."""
-    token = os.environ.get("ML_ACCESS_TOKEN", "")
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    """Busca detalhes do produto pela API do ML."""
+    token = os.environ.get("ML_ACCESS_TOKEN", "APP_USR-3284935202043125-052615-6b8af8244d1406c3727b311eea529f7e-584022277")
 
-    try:
-        url = f"https://api.mercadolibre.com/items/{item_id}"
-        r = requests.get(url, headers=headers, timeout=10)
-        print(f"Status API ML: {r.status_code}")
+    tentativas = [
+        # Tenta com token no header
+        {"url": f"https://api.mercadolibre.com/items/{item_id}", "headers": {"Authorization": f"Bearer {token}"}},
+        # Tenta com token na URL
+        {"url": f"https://api.mercadolibre.com/items/{item_id}?access_token={token}", "headers": {}},
+        # Tenta sem autenticação
+        {"url": f"https://api.mercadolibre.com/items/{item_id}", "headers": {}},
+    ]
 
-        if r.status_code == 200:
-            return r.json()
+    for t in tentativas:
+        try:
+            r = requests.get(t["url"], headers=t["headers"], timeout=10)
+            print(f"Status API ML: {r.status_code}")
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            print(f"Erro: {e}")
+            continue
 
-        # Se 403, tenta sem token
-        if r.status_code == 403 and token:
-            print("Tentando sem token...")
-            r2 = requests.get(url, timeout=10)
-            if r2.status_code == 200:
-                return r2.json()
-
-        print(f"Erro API ML: {r.status_code} - {r.text[:100]}")
-        return None
-    except Exception as e:
-        print(f"Erro ao buscar produto: {e}")
-        return None
+    print("❌ Todas as tentativas falharam.")
+    return None
 
 def buscar_oferta(link_afiliado):
     """Busca os dados do produto a partir do link de afiliado."""
