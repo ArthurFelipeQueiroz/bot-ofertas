@@ -1,80 +1,75 @@
-import requests
-import schedule
+import os
 import time
 import random
-import os
+import requests
+import schedule
+import feedparser  # Adicionado para ler RSS de forma segura
+import pytz        # Adicionado para corrigir o fuso horário no Railway
 from datetime import datetime
 
+# Configurações da Evolution API - RECOMENDÁVEL MOVER PARA VARIÁVEIS DE AMBIENTE
 EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
-EVOLUTION_APIKEY   = "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf"
+EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
 GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
 
 HORA_INICIO     = 8
 HORA_FIM        = 22
 INTERVALO_HORAS = 2
+FUSO_HORARIO    = pytz.timezone("America/Sao_Paulo")
 
-def extrair_entre(texto, inicio, fim):
-    try:
-        return texto.split(inicio)[1].split(fim)[0].strip()
-    except:
-        return ""
+def obter_hora_local():
+    return datetime.now(FUSO_HORARIO)
 
 def buscar_oferta():
-    # Tenta vários formatos de RSS/feed
+    # Feeds alternativos menos agressivos no bloqueio (Exemplo com feeds de notícias de tech/ofertas)
+    # Evite links diretos de busca do ML/Amazon sem API de afiliado pois dão Block 403 frequentemente
     feeds = [
-        ("ML-smartphones", "https://lista.mercadolivre.com.br/eletronicos-audio-video/smartphones-celulares/_Discount_10-100_RSS"),
-        ("ML-notebooks",   "https://lista.mercadolivre.com.br/informatica/notebooks-acessorios/notebooks/_Discount_10-100_RSS"),
-        ("Amazon-eletro",  "https://www.amazon.com.br/gp/rss/bestsellers/electronics"),
-        ("Amazon-casa",    "https://www.amazon.com.br/gp/rss/bestsellers/home"),
+        ("Mundo-Conectado", "https://mundoconectado.com.br"),
+        ("Tecnoblog-Ofertas", "https://tecnoblog.net"),
     ]
 
     random.shuffle(feeds)
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     for nome, url in feeds:
         try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            r = requests.get(url, headers=headers, timeout=15)
-            print(f"Feed {nome}: {r.status_code}")
-
-            if r.status_code != 200:
+            # Baixa o conteúdo usando requests para passar o User-Agent e evitar 403
+            response = requests.get(url, headers=headers, timeout=15)
+            print(f"Feed {nome}: Status {response.status_code}")
+            
+            if response.status_code != 200:
                 continue
 
-            conteudo = r.text
+            # Faz o parse seguro do XML
+            feed = feedparser.parse(response.content)
+            
+            if not feed.entries:
+                continue
 
-            # Log primeiros 300 chars para debug
-            print(f"Preview: {conteudo[:300]}")
+            # Seleciona um item recente aleatório
+            itens = feed.entries[:15]
+            item = random.choice(itens)
 
-            # Tenta <item> (RSS)
-            if "<item>" in conteudo or "<item " in conteudo:
-                itens = conteudo.split("<item>")[1:] or conteudo.split("<item ")[1:]
-                print(f"📰 {len(itens)} itens RSS encontrados")
-                if itens:
-                    item = random.choice(itens[:20])
-                    titulo = extrair_entre(item, "<title>", "</title>").replace("<![CDATA[","").replace("]]>","").strip()
-                    link   = extrair_entre(item, "<link>", "</link>") or extrair_entre(item, "<guid>", "</guid>")
-                    desc   = extrair_entre(item, "<description>", "</description>")
-                    imagem = ""
-                    if 'src="' in desc:
-                        imagem = extrair_entre(desc, 'src="', '"')
-                    if not imagem or not imagem.startswith("http"):
-                        imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
-                    return {"title": titulo, "link": link, "image": imagem}
+            titulo = item.get("title", "Oferta imperdível")
+            link = item.get("link", "")
+            
+            # Tenta extrair imagem padrão ou do post
+            imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
+            if "media_content" in item:
+                imagem = item.media_content[0]["url"]
+            elif "links" in item:
+                for l in item.links:
+                    if "image" in l.get("type", ""):
+                        imagem = l.get("href", imagem)
 
-            # Tenta <entry> (Atom)
-            elif "<entry>" in conteudo:
-                itens = conteudo.split("<entry>")[1:]
-                print(f"📰 {len(itens)} itens Atom encontrados")
-                if itens:
-                    item = random.choice(itens[:20])
-                    titulo = extrair_entre(item, "<title>", "</title>").replace("<![CDATA[","").replace("]]>","").strip()
-                    link_tag = extrair_entre(item, '<link href="', '"')
-                    link = link_tag or extrair_entre(item, "<id>", "</id>")
-                    imagem = extrair_entre(item, '<img src="', '"') or "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
-                    return {"title": titulo, "link": link, "image": imagem}
+            return {"title": titulo, "link": link, "image": imagem}
 
         except Exception as e:
-            print(f"Erro {nome}: {e}")
+            print(f"Erro ao ler feed {nome}: {e}")
             continue
 
     return None
@@ -82,47 +77,59 @@ def buscar_oferta():
 def montar_mensagem(oferta):
     titulo = oferta.get("title", "Oferta imperdível")
     link   = oferta.get("link", "")
-    imagem = oferta.get("image", "")
-
-    texto  = f"🔥 *{titulo}*\n\n"
-    texto += f"🛒 Ver oferta: {link}"
-    return texto, imagem
+    return f"🔥 *{titulo}*\n\n🛒 Ver oferta: {link}"
 
 def enviar_whatsapp(texto, imagem):
     url = f"{EVOLUTION_URL}/message/sendMedia/{EVOLUTION_INSTANCE}"
-    headers = {"apikey": EVOLUTION_APIKEY}
-    body = {"number": GRUPO_ID, "mediatype": "image", "media": imagem, "caption": texto}
+    headers = {
+        "apikey": EVOLUTION_APIKEY,
+        "Content-Type": "application/json"
+    }
+    
+    # Payload adaptado para os padrões mais estáveis da Evolution API
+    body = {
+        "number": GRUPO_ID,
+        "mediatype": "image",
+        "media": imagem,       # Se não funcionar, mude a chave para "mediaUrl" dependendo da sua versão da API
+        "caption": texto,
+        "delay": 1200
+    }
+    
     try:
-        r = requests.post(url, json=body, headers=headers, timeout=10)
+        r = requests.post(url, json=body, headers=headers, timeout=15)
         if r.status_code in [200, 201]:
-            print(f"✅ Mensagem enviada! ({datetime.now().strftime('%H:%M:%S')})")
+            print(f"✅ Mensagem enviada! ({obter_hora_local().strftime('%H:%M:%S')})")
         else:
-            print(f"❌ Erro envio: {r.status_code} - {r.text}")
+            print(f"❌ Erro na Evolution API: {r.status_code} - {r.text}")
     except Exception as e:
-        print(f"❌ Erro conexão: {e}")
+        print(f"❌ Erro de conexão com a API: {e}")
 
 def executar():
-    hora_atual = datetime.now().hour
-    if hora_atual < HORA_INICIO or hora_atual >= HORA_FIM:
-        print(f"⏸ Fora do horário ({hora_atual}h). Aguardando...")
+    agora = obter_hora_local()
+    if agora.hour < HORA_INICIO or agora.hour >= HORA_FIM:
+        print(f"⏸ Fora do horário comercial ({agora.hour}h BRT). Aguardando...")
         return
 
-    print(f"\n🔍 Buscando oferta... ({datetime.now().strftime('%d/%m/%Y %H:%M')})")
+    print(f"\n🔍 Buscando oferta... ({agora.strftime('%d/%m/%Y %H:%M')})")
     oferta = buscar_oferta()
     if not oferta:
-        print("❌ Nenhuma oferta encontrada.")
+        print("❌ Nenhuma oferta válida foi extraída dos feeds.")
         return
 
-    texto, imagem = montar_mensagem(oferta)
-    print(f"📦 {oferta.get('title', '')}")
+    texto = montar_mensagem(oferta)
+    imagem = oferta.get("image")
+    print(f"📦 Postando: {oferta.get('title')}")
     enviar_whatsapp(texto, imagem)
 
 if __name__ == "__main__":
-    print("🤖 Bot de Ofertas WhatsApp iniciado!")
-    print(f"📱 Grupo: {GRUPO_ID}")
-    print(f"⏰ Enviando a cada {INTERVALO_HORAS}h entre {HORA_INICIO}h e {HORA_FIM}h\n")
+    print("🤖 Bot de Ofertas WhatsApp iniciado com sucesso!")
+    print(f"📱 ID do Grupo alvo: {GRUPO_ID}")
+    print(f"⏰ Janela de envios: {HORA_INICIO}h às {HORA_FIM}h (Horário de Brasília)\n")
+    
+    # Executa uma vez na inicialização para testar
     executar()
+    
     schedule.every(INTERVALO_HORAS).hours.do(executar)
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(30)
