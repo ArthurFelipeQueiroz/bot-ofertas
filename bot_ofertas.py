@@ -3,7 +3,6 @@ import schedule
 import time
 import random
 import os
-import re
 from datetime import datetime
 
 EVOLUTION_URL      = "https://evolution-api-production-1472.up.railway.app"
@@ -15,12 +14,6 @@ HORA_INICIO     = 8
 HORA_FIM        = 22
 INTERVALO_HORAS = 2
 
-FEEDS_ML = [
-    "https://lista.mercadolivre.com.br/eletronicos-audio-video/smartphones-celulares/_Discount_10-100_RSS",
-    "https://lista.mercadolivre.com.br/informatica/notebooks-acessorios/notebooks/_Discount_10-100_RSS",
-    "https://lista.mercadolivre.com.br/eletrodomesticos/_Discount_10-100_RSS",
-]
-
 def extrair_entre(texto, inicio, fim):
     try:
         return texto.split(inicio)[1].split(fim)[0].strip()
@@ -28,76 +21,77 @@ def extrair_entre(texto, inicio, fim):
         return ""
 
 def buscar_oferta():
-    feed_url = random.choice(FEEDS_ML)
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        r = requests.get(feed_url, headers=headers, timeout=15)
-        print(f"Feed ML: {r.status_code}")
+    # Tenta vários formatos de RSS/feed
+    feeds = [
+        ("ML-smartphones", "https://lista.mercadolivre.com.br/eletronicos-audio-video/smartphones-celulares/_Discount_10-100_RSS"),
+        ("ML-notebooks",   "https://lista.mercadolivre.com.br/informatica/notebooks-acessorios/notebooks/_Discount_10-100_RSS"),
+        ("Amazon-eletro",  "https://www.amazon.com.br/gp/rss/bestsellers/electronics"),
+        ("Amazon-casa",    "https://www.amazon.com.br/gp/rss/bestsellers/home"),
+    ]
 
-        if r.status_code != 200:
-            return None
+    random.shuffle(feeds)
 
-        # Parse manual sem XML para evitar erros de encoding
-        conteudo = r.text
+    for nome, url in feeds:
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            r = requests.get(url, headers=headers, timeout=15)
+            print(f"Feed {nome}: {r.status_code}")
 
-        # Divide em itens
-        itens = conteudo.split("<item>")[1:]
-        print(f"📰 {len(itens)} itens encontrados")
+            if r.status_code != 200:
+                continue
 
-        if not itens:
-            return None
+            conteudo = r.text
 
-        item = random.choice(itens[:20])
+            # Log primeiros 300 chars para debug
+            print(f"Preview: {conteudo[:300]}")
 
-        titulo = extrair_entre(item, "<title>", "</title>")
-        titulo = titulo.replace("<![CDATA[", "").replace("]]>", "").strip()
+            # Tenta <item> (RSS)
+            if "<item>" in conteudo or "<item " in conteudo:
+                itens = conteudo.split("<item>")[1:] or conteudo.split("<item ")[1:]
+                print(f"📰 {len(itens)} itens RSS encontrados")
+                if itens:
+                    item = random.choice(itens[:20])
+                    titulo = extrair_entre(item, "<title>", "</title>").replace("<![CDATA[","").replace("]]>","").strip()
+                    link   = extrair_entre(item, "<link>", "</link>") or extrair_entre(item, "<guid>", "</guid>")
+                    desc   = extrair_entre(item, "<description>", "</description>")
+                    imagem = ""
+                    if 'src="' in desc:
+                        imagem = extrair_entre(desc, 'src="', '"')
+                    if not imagem or not imagem.startswith("http"):
+                        imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
+                    return {"title": titulo, "link": link, "image": imagem}
 
-        link = extrair_entre(item, "<link>", "</link>")
-        if not link:
-            link = extrair_entre(item, "<guid>", "</guid>")
+            # Tenta <entry> (Atom)
+            elif "<entry>" in conteudo:
+                itens = conteudo.split("<entry>")[1:]
+                print(f"📰 {len(itens)} itens Atom encontrados")
+                if itens:
+                    item = random.choice(itens[:20])
+                    titulo = extrair_entre(item, "<title>", "</title>").replace("<![CDATA[","").replace("]]>","").strip()
+                    link_tag = extrair_entre(item, '<link href="', '"')
+                    link = link_tag or extrair_entre(item, "<id>", "</id>")
+                    imagem = extrair_entre(item, '<img src="', '"') or "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
+                    return {"title": titulo, "link": link, "image": imagem}
 
-        desc = extrair_entre(item, "<description>", "</description>")
+        except Exception as e:
+            print(f"Erro {nome}: {e}")
+            continue
 
-        # Extrai imagem da descrição
-        imagem = ""
-        if 'src="' in desc:
-            imagem = extrair_entre(desc, 'src="', '"')
-        if not imagem or not imagem.startswith("http"):
-            imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
-
-        # Extrai preço
-        preco = ""
-        if "R$" in titulo:
-            preco = "R$" + extrair_entre(titulo, "R$", " ")
-
-        return {"title": titulo, "link": link, "image": imagem, "preco": preco}
-
-    except Exception as e:
-        print(f"Erro feed: {e}")
-        return None
+    return None
 
 def montar_mensagem(oferta):
     titulo = oferta.get("title", "Oferta imperdível")
     link   = oferta.get("link", "")
     imagem = oferta.get("image", "")
-    preco  = oferta.get("preco", "")
 
     texto  = f"🔥 *{titulo}*\n\n"
-    if preco:
-        texto += f"💰 *{preco}*\n\n"
     texto += f"🛒 Ver oferta: {link}"
-
     return texto, imagem
 
 def enviar_whatsapp(texto, imagem):
     url = f"{EVOLUTION_URL}/message/sendMedia/{EVOLUTION_INSTANCE}"
     headers = {"apikey": EVOLUTION_APIKEY}
-    body = {
-        "number": GRUPO_ID,
-        "mediatype": "image",
-        "media": imagem,
-        "caption": texto
-    }
+    body = {"number": GRUPO_ID, "mediatype": "image", "media": imagem, "caption": texto}
     try:
         r = requests.post(url, json=body, headers=headers, timeout=10)
         if r.status_code in [200, 201]:
