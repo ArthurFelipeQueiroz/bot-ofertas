@@ -72,14 +72,29 @@ def extrair_id_produto(url):
         return None
 
 def buscar_detalhes_produto(item_id):
-    """Busca detalhes do produto pela API pública do ML."""
+    """Busca detalhes do produto pela API do ML com token."""
+    token = os.environ.get("ML_ACCESS_TOKEN", "")
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     try:
         url = f"https://api.mercadolibre.com/items/{item_id}"
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            print(f"Erro API ML: {r.status_code}")
-            return None
-        return r.json()
+        r = requests.get(url, headers=headers, timeout=10)
+        print(f"Status API ML: {r.status_code}")
+
+        if r.status_code == 200:
+            return r.json()
+
+        # Se 403, tenta sem token
+        if r.status_code == 403 and token:
+            print("Tentando sem token...")
+            r2 = requests.get(url, timeout=10)
+            if r2.status_code == 200:
+                return r2.json()
+
+        print(f"Erro API ML: {r.status_code} - {r.text[:100]}")
+        return None
     except Exception as e:
         print(f"Erro ao buscar produto: {e}")
         return None
