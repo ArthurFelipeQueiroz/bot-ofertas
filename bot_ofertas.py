@@ -22,11 +22,9 @@ def obter_hora_local():
     return datetime.now(FUSO_HORARIO)
 
 def buscar_oferta():
-    # Feeds alternativos menos agressivos no bloqueio (Exemplo com feeds de notícias de tech/ofertas)
-    # Evite links diretos de busca do ML/Amazon sem API de afiliado pois dão Block 403 frequentemente
     feeds = [
-        ("Mundo-Conectado", "https://mundoconectado.com.br"),
         ("Tecnoblog-Ofertas", "https://tecnoblog.net"),
+        ("Mundo-Conectado", "https://mundoconectado.com.br"),
     ]
 
     random.shuffle(feeds)
@@ -37,34 +35,43 @@ def buscar_oferta():
 
     for nome, url in feeds:
         try:
-            # Baixa o conteúdo usando requests para passar o User-Agent e evitar 403
             response = requests.get(url, headers=headers, timeout=15)
             print(f"Feed {nome}: Status {response.status_code}")
             
             if response.status_code != 200:
                 continue
 
-            # Faz o parse seguro do XML
             feed = feedparser.parse(response.content)
             
             if not feed.entries:
                 continue
 
-            # Seleciona um item recente aleatório
+            # Pega um dos posts mais recentes
             itens = feed.entries[:15]
             item = random.choice(itens)
 
             titulo = item.get("title", "Oferta imperdível")
             link = item.get("link", "")
             
-            # Tenta extrair imagem padrão ou do post
-            imagem = "https://http2.mlstatic.com/frontend-assets/ui-navigation/5.21.22/mercadolibre/logo__large_plus@2x.png"
+            # Definição de imagem padrão caso falhe em tudo
+            imagem = "https://mlstatic.com"
+            
+            # 1. Tenta extrair das tags do feedparser
             if "media_content" in item:
                 imagem = item.media_content[0]["url"]
             elif "links" in item:
                 for l in item.links:
                     if "image" in l.get("type", ""):
                         imagem = l.get("href", imagem)
+            
+            # 2. Tenta extrair a tag <img src="..."> de dentro da descrição/conteúdo (Muito comum no Tecnoblog)
+            if imagem == "https://mlstatic.com":
+                conteudo_texto = item.get("description", "") + item.get("summary", "")
+                if 'src="' in conteudo_texto:
+                    try:
+                        imagem = conteudo_texto.split('src="')[1].split('"')[0]
+                    except:
+                        pass
 
             return {"title": titulo, "link": link, "image": imagem}
 
@@ -73,6 +80,7 @@ def buscar_oferta():
             continue
 
     return None
+
 
 def montar_mensagem(oferta):
     titulo = oferta.get("title", "Oferta imperdível")
