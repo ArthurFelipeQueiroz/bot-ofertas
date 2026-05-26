@@ -31,16 +31,16 @@ def gerar_link_afiliado(link):
 def buscar_oferta():
     """Retorna uma oferta com link de afiliado."""
     ofertas = [
-        {"title": "🔥 Até 50% OFF em Smartphones — Ofertas do Dia!", "link": "https://www.mercadolivre.com.br/ofertas#deals-components-context"},
-        {"title": "💻 Notebooks em Promoção — Melhores Preços!", "link": "https://www.mercadolivre.com.br/ofertas/notebooks"},
-        {"title": "📺 Smart TVs com desconto imperdível hoje!", "link": "https://www.mercadolivre.com.br/ofertas/smart-tv"},
-        {"title": "🎧 Fones Bluetooth — Ofertas com Frete Grátis!", "link": "https://www.mercadolivre.com.br/c/fone-de-ouvido"},
-        {"title": "⌚ Smartwatches com até 40% OFF!", "link": "https://www.mercadolivre.com.br/c/smartwatch"},
-        {"title": "🏠 Eletrodomésticos em Oferta — Não perca!", "link": "https://www.mercadolivre.com.br/ofertas/eletrodomesticos"},
-        {"title": "📱 iPhones e Samsung com os melhores preços!", "link": "https://www.mercadolivre.com.br/ofertas/celulares"},
-        {"title": "☕ Cafeteiras e Eletrodomésticos com desconto!", "link": "https://www.mercadolivre.com.br/c/cafeteira"},
-        {"title": "🎮 Games e Consoles em Oferta!", "link": "https://www.mercadolivre.com.br/ofertas/games"},
-        {"title": "👟 Tênis e Calçados com até 60% OFF!", "link": "https://www.mercadolivre.com.br/ofertas/calcados"},
+        {"title": "🔥 Até 50% OFF em Smartphones — Ofertas do Dia!", "link": "https://www.mercadolivre.com.br/lista/ofertas#deals-components-context"},
+        {"title": "💻 Notebooks em Promoção — Melhores Preços!", "link": "https://lista.mercadolivre.com.br/notebook"},
+        {"title": "📺 Smart TVs com desconto imperdível hoje!", "link": "https://lista.mercadolivre.com.br/smart-tv"},
+        {"title": "🎧 Fones Bluetooth — Ofertas com Frete Grátis!", "link": "https://lista.mercadolivre.com.br/fone-bluetooth"},
+        {"title": "⌚ Smartwatches com até 40% OFF!", "link": "https://lista.mercadolivre.com.br/smartwatch"},
+        {"title": "🏠 Eletrodomésticos em Oferta — Não perca!", "link": "https://lista.mercadolivre.com.br/eletrodomesticos"},
+        {"title": "📱 iPhones e Samsung com os melhores preços!", "link": "https://lista.mercadolivre.com.br/celular-smartphone"},
+        {"title": "☕ Cafeteiras e Eletrodomésticos com desconto!", "link": "https://lista.mercadolivre.com.br/cafeteira"},
+        {"title": "🎮 Games e Consoles em Oferta!", "link": "https://lista.mercadolivre.com.br/video-game"},
+        {"title": "👟 Tênis e Calçados com até 60% OFF!", "link": "https://lista.mercadolivre.com.br/tenis"},
     ]
 
     oferta = random.choice(ofertas)
