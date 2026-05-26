@@ -8,7 +8,7 @@ import pytz
 from datetime import datetime
 
 # O link PRECISA começar com a sua instância específica e terminar com .up.railway.app
-EVOLUTION_URL      = "https://railway.app" 
+EVOLUTION_URL      = "https://railway.app"
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
 GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
