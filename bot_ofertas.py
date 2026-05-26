@@ -22,7 +22,7 @@ def obter_hora_local():
     return datetime.now(FUSO_HORARIO)
 
 def buscar_oferta():
-    # Usando feeds do G1 que são abertos e nunca bloqueiam servidores
+    # Feeds abertos do G1 (Tecnologia e Economia) - Não bloqueiam o Railway
     feeds = [
         ("G1-Tecnologia", "https://globo.com"),
         ("G1-Economia", "https://globo.com")
@@ -37,41 +37,36 @@ def buscar_oferta():
             if response.status_code != 200:
                 continue
 
-            # Parse direto da URL ou conteúdo
             feed = feedparser.parse(response.content)
             
             if feed.entries:
-                item = random.choice(feed.entries[:10])
-                titulo = item.get("title", "Oferta Especial do Dia")
-                link = item.get("link", "https://mercadolivre.com.br")
-                
-                # Procura imagem nas tags do G1
-                imagem = "https://mlstatic.com"
-                if "links" in item:
-                    for l in item.links:
-                        if "image" in l.get("type", ""):
-                            imagem = l.get("href")
-                
-                return {"title": titulo, "link": link, "image": imagem}
+                item = random.choice(feed.entries[:15])
+                return {
+                    "title": item.get("title", "Oferta imperdível"),
+                    "link": item.get("link", "https://mercadolivre.com.br")
+                }
         except Exception as e:
-            print(f"Erro no feed {nome}: {e}")
+            print(f"⚠️ Erro ao ler feed {nome}: {e}")
             continue
 
-    # SISTEMA DE RESERVA (Se todos os sites bloquearem, ele gera um post para não quebrar)
-    print("⚠️ Usando post do sistema de reserva para testes...")
-    ofertas_reserva = [
-        {"title": "Smartphone Samsung Galaxy S23 Ultra 256GB - Cupom Ativo!", "link": "https://mercadolivre.com.br", "image": "https://mlstatic.com"},
-        {"title": "Notebook Gamer Dell G15 Intel Core i5 8GB 512GB SSD", "link": "https://mercadolivre.com.br", "image": "https://mlstatic.com"}
-    ]
-    return random.choice(ofertas_reserva)
+    # Sistema de reserva caso os sites caiam
+    return {
+        "title": "Smartphone Samsung Galaxy S23 Ultra 256GB em Oferta!",
+        "link": "https://mercadolivre.com.br"
+    }
 
 def montar_mensagem(oferta):
-    titulo = oferta.get("title", "Oferta imperdível")
-    link   = oferta.get("link", "")
-    return f"🔥 *{titulo}*\n\n🛒 Ver oferta: {link}"
+    titulo = oferta.get("title")
+    link   = oferta.get("link")
+    
+    # Monta um texto limpo e bem formatado para o WhatsApp
+    texto  = f"🔥 *{titulo}*\n\n"
+    texto += f"🛒 *Aproveite aqui:* {link}"
+    return texto
 
-def enviar_whatsapp(texto, imagem):
-    url = f"{EVOLUTION_URL}/message/sendMedia/{EVOLUTION_INSTANCE}"
+def enviar_whatsapp(texto):
+    # Mudamos o endpoint para 'sendText' que é muito mais rápido e estável
+    url = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
     headers = {
         "apikey": EVOLUTION_APIKEY,
         "Content-Type": "application/json"
@@ -79,16 +74,16 @@ def enviar_whatsapp(texto, imagem):
     
     body = {
         "number": GRUPO_ID,
-        "mediatype": "image",
-        "media": imagem,
-        "caption": texto
+        "text": texto,
+        "delay": 1200,
+        "linkPreview": True  # O próprio WhatsApp gera uma prévia visual do link se o site permitir!
     }
     
     try:
         r = requests.post(url, json=body, headers=headers, timeout=15)
-        print(f"Resposta da API (Status {r.status_code}): {r.text}")
+        print(f"Status da API: {r.status_code} | Resposta: {r.text}")
     except Exception as e:
-        print(f"❌ Erro de conexão com a API: {e}")
+        print(f"❌ Erro de conexão com a Evolution API: {e}")
 
 def executar():
     agora = obter_hora_local()
@@ -96,19 +91,19 @@ def executar():
         print(f"⏸ Fora do horário comercial ({agora.hour}h BRT). Aguardando...")
         return
 
-    print(f"\n🔍 Buscando postagem... ({agora.strftime('%d/%m/%Y %H:%M')})")
+    print(f"\n🔍 Buscando nova postagem... ({agora.strftime('%d/%m/%Y %H:%M')})")
     oferta = buscar_oferta()
-    
     texto = montar_mensagem(oferta)
-    imagem = oferta.get("image")
-    print(f"📦 Postando no grupo: {oferta.get('title')}")
-    enviar_whatsapp(texto, imagem)
+    
+    print(f"📦 Enviando texto: {oferta.get('title')}")
+    enviar_whatsapp(texto)
 
 if __name__ == "__main__":
-    print("🤖 Bot de Ofertas WhatsApp iniciado com sucesso!")
-    print(f"📱 ID do Grupo alvo: {GRUPO_ID}")
-    print(f"⏰ Janela de envios: {HORA_INICIO}h às {HORA_FIM}h (Horário de Brasília)\n")
+    print("🤖 Bot de Ofertas em Texto iniciado!")
+    print(f"📱 ID do Grupo: {GRUPO_ID}")
+    print(f"⏰ Envios a cada {INTERVALO_HORAS}h entre {HORA_INICIO}h e {HORA_FIM}h\n")
     
+    # Executa imediatamente ao iniciar para testar
     executar()
     
     schedule.every(INTERVALO_HORAS).hours.do(executar)
