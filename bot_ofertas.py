@@ -44,43 +44,45 @@ def buscar_oferta():
             feed = feedparser.parse(response.content)
             
             if not feed.entries:
+                print(f"⚠️ Feed {nome} veio sem posts.")
                 continue
 
-            # Pega um dos posts mais recentes
+            # Seleciona um post aleatório dos 15 mais recentes
             itens = feed.entries[:15]
             item = random.choice(itens)
 
             titulo = item.get("title", "Oferta imperdível")
             link = item.get("link", "")
             
-            # Definição de imagem padrão caso falhe em tudo
+            # Imagem padrão para o robô nunca quebrar caso não ache nenhuma no post
             imagem = "https://mlstatic.com"
             
-            # 1. Tenta extrair das tags do feedparser
-            if "media_content" in item:
+            # 1. Tentativa via tags estruturadas do Feedparser
+            if "media_content" in item and len(item.media_content) > 0:
                 imagem = item.media_content[0]["url"]
             elif "links" in item:
                 for l in item.links:
                     if "image" in l.get("type", ""):
                         imagem = l.get("href", imagem)
             
-            # 2. Tenta extrair a tag <img src="..."> de dentro da descrição/conteúdo (Muito comum no Tecnoblog)
+            # 2. Tentativa via HTML (Corrigido)
             if imagem == "https://mlstatic.com":
                 conteudo_texto = item.get("description", "") + item.get("summary", "")
                 if 'src="' in conteudo_texto:
                     try:
+                        # Extrai corretamente o link entre as aspas do src
                         imagem = conteudo_texto.split('src="')[1].split('"')[0]
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"⚠️ Erro ao quebrar tag img: {e}")
 
+            print(f"🎉 Encontrado: {titulo}")
             return {"title": titulo, "link": link, "image": imagem}
 
         except Exception as e:
-            print(f"Erro ao ler feed {nome}: {e}")
+            print(f"Erro ao processar o feed {nome}: {e}")
             continue
 
     return None
-
 
 def montar_mensagem(oferta):
     titulo = oferta.get("title", "Oferta imperdível")
