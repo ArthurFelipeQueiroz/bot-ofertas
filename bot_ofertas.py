@@ -12,7 +12,7 @@ from datetime import datetime
 EVOLUTION_URL      = os.environ.get("EVOLUTION_URL", "https://evolution-api-production-1472.up.railway.app")
 EVOLUTION_INSTANCE = "evolution-api-production-1472"
 EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
-GRUPO_ID           = os.environ.get("GRUPO_ID", "120363423796606784@g.us")
+GRUPO_ID           = os.environ.get("GRUPO_ID", "556181595878-1598281026@g.us")
 
 # Credenciais do Mercado Livre
 ML_CLIENT_ID     = "3284935202043125"
@@ -97,7 +97,7 @@ def gerar_link_afiliado(link_original):
 
     try:
         r = requests.post(
-            f"https://api.mercadolibre.com/affiliates/{ML_AFILIADO_ID}/links",
+            f"https://api.mercadolibre.com/users/{ML_AFILIADO_ID}/links",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"url": link_original},
             timeout=10
