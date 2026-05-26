@@ -65,15 +65,17 @@ def montar_mensagem(oferta):
     return texto
 
 def enviar_whatsapp(texto):
-    # Constrói a rota exata: https://railway.app
-    url = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
+    # Formato oficial da Evolution API v2: o endpoint termina apenas em /sendText
+    url = f"{EVOLUTION_URL.rstrip('/')}/message/sendText"
     
     headers = {
         "apikey": EVOLUTION_APIKEY,
         "Content-Type": "application/json"
     }
     
+    # Na v2, passamos a instância dentro do JSON
     body = {
+        "instanceName": EVOLUTION_INSTANCE,
         "number": GRUPO_ID,
         "text": texto,
         "delay": 200,
@@ -81,13 +83,28 @@ def enviar_whatsapp(texto):
     }
     
     try:
-        print(f"🔗 Conectando em: {url}")
+        print(f"🔗 Tentando Rota v2: {url}")
         r = requests.post(url, json=body, headers=headers, timeout=15)
+        
+        # Se der 404 (Rota v2 não encontrada), tenta automaticamente a Rota antiga v1
+        if r.status_code == 404:
+            print("⚠️ Rota v2 deu 404. Tentando formato alternativo da v1...")
+            url_v1 = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
+            body_v1 = {
+                "number": GRUPO_ID,
+                "text": texto,
+                "delay": 200,
+                "linkPreview": True
+            }
+            print(f"🔗 Tentando Rota v1: {url_v1}")
+            r = requests.post(url_v1, json=body_v1, headers=headers, timeout=15)
+
         print(f"Status da API: {r.status_code}")
         if r.status_code in [200, 201]:
             print("✅ Sucesso! Mensagem enviada para o grupo do WhatsApp.")
         else:
-            print(f"❌ Erro retornado pela Evolution API: {r.text}")
+            print(f"❌ Erro retornado pela Evolution API: {r.text[:300]}") # Exibe apenas o começo para não poluir o log
+            
     except Exception as e:
         print(f"❌ Erro de conexão externa: {e}")
 
