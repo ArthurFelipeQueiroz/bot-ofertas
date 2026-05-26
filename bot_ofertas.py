@@ -4,6 +4,7 @@ import random
 import requests
 import schedule
 import pytz
+import re
 from datetime import datetime
 
 # Configurações da Evolution API
@@ -21,30 +22,86 @@ def obter_hora_local():
     return datetime.now(FUSO_HORARIO)
 
 # ============================================================
-# LISTA DE PRODUTOS — adicione quantos quiser!
+# LISTA DE LINKS DE AFILIADO — adicione quantos quiser!
 # ============================================================
-PRODUTOS = [
-    {
-        "titulo":   "Perfume Club De Nuit Intense Da Armaf Edt 105ml Masculino",
-        "preco":    "R$ 217,30",
-        "original": "R$ 265,00",
-        "desconto": "18% OFF no Pix",
-        "frete":    True,
-        "link":     "https://meli.la/1o7cqys",
-        "imagem":   "https://http2.mlstatic.com/D_NQ_NP_2X_887864-MLB108264754941_032026-F.webp"
-    },
+LINKS_AFILIADOS = [
+    "https://meli.la/2pD6jbV",
+    "https://meli.la/2ue9rSS",
+    "https://meli.la/1C6doSe",
+    "https://meli.la/1o7cqys",
 ]
 
-def buscar_oferta():
-    return random.choice(PRODUTOS)
+def extrair_id_produto(url):
+    """Resolve o link curto e extrai o ID MLB do produto."""
+    try:
+        r = requests.get(url, allow_redirects=True, timeout=10,
+                        headers={"User-Agent": "Mozilla/5.0"})
+        url_final = r.url
+        print(f"URL final: {url_final}")
+        match = re.search(r'(MLB-?\d+)', url_final)
+        if match:
+            return match.group(1).replace("-", "")
+        return None
+    except Exception as e:
+        print(f"Erro ao resolver URL: {e}")
+        return None
+
+def buscar_detalhes_produto(item_id):
+    """Busca detalhes do produto pela API pública do ML."""
+    try:
+        url = f"https://api.mercadolibre.com/items/{item_id}"
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            print(f"Erro API ML: {r.status_code}")
+            return None
+        return r.json()
+    except Exception as e:
+        print(f"Erro ao buscar produto: {e}")
+        return None
+
+def buscar_oferta(link_afiliado):
+    """Busca os dados do produto a partir do link de afiliado."""
+    print(f"🔍 Resolvendo link: {link_afiliado}")
+    item_id = extrair_id_produto(link_afiliado)
+
+    if not item_id:
+        print("❌ Não foi possível extrair o ID do produto.")
+        return None
+
+    print(f"📦 ID encontrado: {item_id}")
+    dados = buscar_detalhes_produto(item_id)
+
+    if not dados:
+        return None
+
+    titulo      = dados.get("title", "Produto")
+    preco       = dados.get("price", 0)
+    preco_orig  = dados.get("original_price") or preco
+    frete       = dados.get("shipping", {}).get("free_shipping", False)
+    imagem      = dados.get("thumbnail", "").replace("I.jpg", "O.jpg")
+
+    desconto = 0
+    if preco_orig and preco_orig > preco:
+        desconto = round((1 - preco / preco_orig) * 100)
+
+    return {
+        "titulo":   titulo,
+        "preco":    preco,
+        "original": preco_orig,
+        "desconto": desconto,
+        "frete":    frete,
+        "imagem":   imagem,
+        "link":     link_afiliado
+    }
 
 def montar_mensagem(p):
     texto  = f"🔥 *{p['titulo']}*\n\n"
-    texto += f"De: ~{p['original']}~\n"
-    texto += f"💰 Por Apenas: *{p['preco']}*"
-    if p.get("desconto"):
-        texto += f" (*{p['desconto']}*)"
-    if p.get("frete"):
+    if p["desconto"] > 0:
+        texto += f"De: ~R$ {p['original']:.2f}~\n"
+    texto += f"💰 Por Apenas: *R$ {p['preco']:.2f}*"
+    if p["desconto"] > 0:
+        texto += f" (*{p['desconto']}% OFF*)"
+    if p["frete"]:
         texto += f"\n✅ *Frete Grátis*"
     texto += f"\n\n🛒 *Comprar agora:* {p['link']}"
     return texto
@@ -52,36 +109,29 @@ def montar_mensagem(p):
 def enviar_whatsapp(texto, imagem):
     headers = {"apikey": EVOLUTION_APIKEY, "Content-Type": "application/json"}
 
-    # Tenta enviar com imagem (v1)
+    # Tenta enviar com imagem
     url = f"{EVOLUTION_URL.rstrip('/')}/message/sendMedia/{EVOLUTION_INSTANCE}"
-    body = {
-        "number":    GRUPO_ID,
-        "mediatype": "image",
-        "media":     imagem,
-        "caption":   texto
-    }
+    body = {"number": GRUPO_ID, "mediatype": "image", "media": imagem, "caption": texto}
 
     try:
         r = requests.post(url, json=body, headers=headers, timeout=15)
-        print(f"Status WhatsApp: {r.status_code}")
+        print(f"Status: {r.status_code}")
 
         if r.status_code in [200, 201]:
             print("✅ Mensagem com imagem enviada!")
             return
 
-        # Se falhar, envia só texto
-        print("⚠️ Falha na imagem, enviando só texto...")
-        url_txt = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
-        body_txt = {"number": GRUPO_ID, "text": texto, "delay": 200, "linkPreview": True}
-        r2 = requests.post(url_txt, json=body_txt, headers=headers, timeout=15)
+        # Fallback: envia só texto
+        print("⚠️ Tentando enviar só texto...")
+        url2 = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
+        body2 = {"number": GRUPO_ID, "text": texto, "delay": 200, "linkPreview": True}
+        r2 = requests.post(url2, json=body2, headers=headers, timeout=15)
         print(f"Status texto: {r2.status_code}")
         if r2.status_code in [200, 201]:
             print("✅ Mensagem texto enviada!")
-        else:
-            print(f"❌ Erro: {r2.text[:200]}")
 
     except Exception as e:
-        print(f"❌ Erro de conexão: {e}")
+        print(f"❌ Erro: {e}")
 
 def executar():
     agora = obter_hora_local()
@@ -90,10 +140,19 @@ def executar():
         return
 
     print(f"\n🔍 Buscando oferta... ({agora.strftime('%d/%m/%Y %H:%M')})")
-    produto = buscar_oferta()
-    texto   = montar_mensagem(produto)
-    imagem  = produto["imagem"]
+
+    link = random.choice(LINKS_AFILIADOS)
+    produto = buscar_oferta(link)
+
+    if not produto:
+        print("❌ Não foi possível buscar o produto.")
+        return
+
     print(f"📦 {produto['titulo']}")
+    print(f"💰 R$ {produto['preco']:.2f}")
+
+    texto  = montar_mensagem(produto)
+    imagem = produto["imagem"]
     enviar_whatsapp(texto, imagem)
 
 if __name__ == "__main__":
