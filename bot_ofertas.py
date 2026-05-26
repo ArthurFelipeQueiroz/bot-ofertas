@@ -65,25 +65,40 @@ def montar_mensagem(oferta):
     return texto
 
 def enviar_whatsapp(texto):
-    # Mudamos o endpoint para 'sendText' que é muito mais rápido e estável
-    url = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
+    # CORREÇÃO DA ROTA: Na Evolution API v1/v2, o padrão correto é '/message/sendText'
+    # Sem a instância no final da URL, ela vai no corpo do JSON ou como parâmetro.
+    # Vamos testar o formato oficial mais comum das rotas da Evolution:
+    url = f"{EVOLUTION_URL}/message/sendText"
+    
     headers = {
         "apikey": EVOLUTION_APIKEY,
         "Content-Type": "application/json"
     }
     
     body = {
+        "instanceName": EVOLUTION_INSTANCE, # Adicionado explicitamente para APIs mais novas
         "number": GRUPO_ID,
         "text": texto,
         "delay": 1200,
-        "linkPreview": True  # O próprio WhatsApp gera uma prévia visual do link se o site permitir!
+        "linkPreview": True
     }
     
     try:
         r = requests.post(url, json=body, headers=headers, timeout=15)
         print(f"Status da API: {r.status_code} | Resposta: {r.text}")
+        
+        # Se ainda der 404, tentamos a rota alternativa antiga da v1
+        if r.status_code == 404:
+            print("⚠️ Tentando rota alternativa v1...")
+            url_alt = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
+            # Algumas versões esperam apenas o number e text se a instância já está na URL
+            body_alt = {"number": GRUPO_ID, "text": texto}
+            r_alt = requests.post(url_alt, json=body_alt, headers=headers, timeout=15)
+            print(f"Status Rota Alt: {r_alt.status_code} | Resposta: {r_alt.text}")
+            
     except Exception as e:
         print(f"❌ Erro de conexão com a Evolution API: {e}")
+
 
 def executar():
     agora = obter_hora_local()
