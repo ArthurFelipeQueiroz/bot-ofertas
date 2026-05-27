@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 # ============================================================
-# CONFIGURAÇÕES
+# CONFIGURAÇÕES DA EVOLUTION API
 # ============================================================
 
 EVOLUTION_URL = os.environ.get(
@@ -17,10 +17,7 @@ EVOLUTION_URL = os.environ.get(
     "https://evolution-api-production-1472.up.railway.app"
 )
 
-EVOLUTION_INSTANCE = os.environ.get(
-    "EVOLUTION_INSTANCE",
-    "evolution-api-production-1472"
-)
+EVOLUTION_INSTANCE = "evolution-api-production-1472"
 
 EVOLUTION_APIKEY = os.environ.get(
     "EVOLUTION_APIKEY",
@@ -32,6 +29,10 @@ GRUPO_ID = os.environ.get(
     "556181595878-1598281026@g.us"
 )
 
+# ============================================================
+# CONFIGURAÇÕES DE HORÁRIO
+# ============================================================
+
 HORA_INICIO = 8
 HORA_FIM = 22
 INTERVALO_HORAS = 2
@@ -40,8 +41,6 @@ FUSO_HORARIO = pytz.timezone("America/Sao_Paulo")
 
 # ============================================================
 # LINKS AFILIADOS
-# IMPORTANTE:
-# USE APENAS LINKS QUE ABREM PRODUTOS INDIVIDUAIS
 # ============================================================
 
 LINKS_AFILIADOS = [
@@ -313,10 +312,7 @@ def montar_mensagem(produto):
         f"🔥 *{produto['titulo']}*\n\n"
     )
 
-    # ========================================================
     # PREÇO ORIGINAL
-    # ========================================================
-
     if (
         produto["original"]
         and produto["original"] > produto["preco"]
@@ -327,39 +323,27 @@ def montar_mensagem(produto):
             f"~R$ {formatar_preco(produto['original'])}~\n"
         )
 
-    # ========================================================
     # PREÇO ATUAL
-    # ========================================================
-
     texto += (
         f"💰 Por apenas: "
         f"*R$ {formatar_preco(produto['preco'])}*"
     )
 
-    # ========================================================
     # DESCONTO
-    # ========================================================
-
     if produto["desconto"] > 0:
 
         texto += (
             f" ({produto['desconto']}% OFF)"
         )
 
-    # ========================================================
     # FRETE
-    # ========================================================
-
     if produto["frete"]:
 
         texto += (
             "\n🚚 *Frete Grátis*"
         )
 
-    # ========================================================
     # LINK
-    # ========================================================
-
     texto += (
         f"\n\n🛒 *Comprar agora:*\n"
         f"{produto['link']}"
@@ -477,7 +461,7 @@ def enviar_whatsapp(texto, imagem=None):
         print(
             f"⚠️ Falha texto: "
             f"{r.text}"
-        )
+            )
 
         return False
 
@@ -497,10 +481,7 @@ def executar():
 
     agora = obter_hora_local()
 
-    # ========================================================
     # VERIFICA HORÁRIO
-    # ========================================================
-
     if (
         agora.hour < HORA_INICIO
         or agora.hour >= HORA_FIM
@@ -614,24 +595,15 @@ if __name__ == "__main__":
         f"e {HORA_FIM}h"
     )
 
-    # ========================================================
     # PRIMEIRA EXECUÇÃO
-    # ========================================================
-
     executar()
 
-    # ========================================================
     # AGENDAMENTO
-    # ========================================================
-
     schedule.every(
         INTERVALO_HORAS
     ).hours.do(executar)
 
-    # ========================================================
     # LOOP PRINCIPAL
-    # ========================================================
-
     while True:
 
         try:
