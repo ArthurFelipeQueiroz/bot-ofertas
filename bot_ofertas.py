@@ -5,25 +5,43 @@ import requests
 import schedule
 import pytz
 import re
+
 from datetime import datetime
 
-# Configurações da Evolution API
-EVOLUTION_URL      = os.environ.get("EVOLUTION_URL", "https://evolution-api-production-1472.up.railway.app")
-EVOLUTION_INSTANCE = "evolution-api-production-1472"
-EVOLUTION_APIKEY   = os.environ.get("EVOLUTION_APIKEY", "d9205c8f52a108765dfb5ae9039f10f5ac2f6eac17952a521a220d50ee997daf")
-GRUPO_ID           = os.environ.get("GRUPO_ID", "556181595878-1598281026@g.us")
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
 
-HORA_INICIO     = 8
-HORA_FIM        = 22
+EVOLUTION_URL = os.environ.get(
+    "EVOLUTION_URL",
+    "https://evolution-api-production-1472.up.railway.app"
+)
+
+EVOLUTION_INSTANCE = os.environ.get(
+    "EVOLUTION_INSTANCE",
+    "evolution-api-production-1472"
+)
+
+EVOLUTION_APIKEY = os.environ.get(
+    "EVOLUTION_APIKEY",
+    "SUA_API_KEY"
+)
+
+GRUPO_ID = os.environ.get(
+    "GRUPO_ID",
+    "556181595878-1598281026@g.us"
+)
+
+HORA_INICIO = 8
+HORA_FIM = 22
 INTERVALO_HORAS = 2
-FUSO_HORARIO    = pytz.timezone("America/Sao_Paulo")
 
-def obter_hora_local():
-    return datetime.now(FUSO_HORARIO)
+FUSO_HORARIO = pytz.timezone("America/Sao_Paulo")
 
 # ============================================================
-# LISTA DE LINKS DE AFILIADO — adicione quantos quiser!
+# LINKS DE AFILIADO
 # ============================================================
+
 LINKS_AFILIADOS = [
     "https://meli.la/2pD6jbV",
     "https://meli.la/2ue9rSS",
@@ -31,236 +49,391 @@ LINKS_AFILIADOS = [
     "https://meli.la/1o7cqys",
 ]
 
-def extrair_id_produto(url):
-    """Resolve o link curto e extrai o ID MLB do produto seguindo todos os redirecionamentos."""
+# ============================================================
+# SESSION GLOBAL
+# ============================================================
+
+session = requests.Session()
+
+session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "pt-BR,pt;q=0.9",
+    "Accept": "application/json,text/html,*/*"
+})
+
+# ============================================================
+# UTILIDADES
+# ============================================================
+
+def obter_hora_local():
+    return datetime.now(FUSO_HORARIO)
+
+
+def formatar_preco(valor):
     try:
-        session = requests.Session()
-        session.max_redirects = 10
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml"
-        }
+        return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return "0,00"
 
-        # Segue todos os redirecionamentos e verifica cada URL
-        resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
 
-        # Verifica todas as URLs do histórico de redirecionamentos
-        urls_visitadas = [r.url for r in resp.history] + [resp.url]
-        print(f"URLs visitadas: {len(urls_visitadas)}")
+# ============================================================
+# EXTRAI ID MLB
+# ============================================================
 
-        for u in urls_visitadas:
-            print(f"  → {u[:80]}")
-            match = re.search(r'MLB-?(\d+)', u)
-            if match:
-                item_id = "MLB" + match.group(1)
-                print(f"✅ ID encontrado: {item_id}")
-                return item_id
+def extrair_id_produto(url):
+    """
+    Resolve o link afiliado e extrai o MLBXXXXXXXX.
+    """
 
-        # Tenta extrair do conteúdo HTML da página
-        html = resp.text
-        match = re.search(r'MLB-?(\d{6,12})', html)
+    try:
+        print(f"\n🔍 Resolvendo link: {url}")
+
+        r = session.get(
+            url,
+            timeout=20,
+            allow_redirects=True
+        )
+
+        final_url = r.url
+
+        print(f"🌐 URL final: {final_url}")
+
+        # Procura MLB123456789
+        match = re.search(r'(MLB\d+)', final_url)
+
         if match:
-            item_id = "MLB" + match.group(1)
-            print(f"✅ ID encontrado no HTML: {item_id}")
+            item_id = match.group(1)
+
+            print(f"✅ ID encontrado: {item_id}")
+
             return item_id
 
-        print(f"URL final: {resp.url}")
+        # Procura MLB-123456789
+        match = re.search(r'MLB-(\d+)', final_url)
+
+        if match:
+            item_id = f"MLB{match.group(1)}"
+
+            print(f"✅ ID encontrado: {item_id}")
+
+            return item_id
+
+        print("❌ ID MLB não encontrado.")
+
         return None
 
     except Exception as e:
-        print(f"Erro ao resolver URL: {e}")
+        print(f"❌ Erro ao resolver link: {e}")
+
         return None
+
+
+# ============================================================
+# API OFICIAL MERCADO LIVRE
+# ============================================================
 
 def buscar_detalhes_produto(item_id):
-    """Busca detalhes do produto via scraping da página do ML."""
-    import json as jsonlib
-
-    url = f"https://www.mercadolivre.com.br/p/{item_id}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-    }
+    """
+    Busca dados oficiais via API do Mercado Livre.
+    """
 
     try:
-        r = requests.get(url, headers=headers, timeout=15)
-        print(f"Status página ML: {r.status_code}")
+        url = f"https://api.mercadolibre.com/items/{item_id}"
+
+        print(f"📡 Consultando API ML: {item_id}")
+
+        r = session.get(url, timeout=20)
+
+        print(f"📶 Status API: {r.status_code}")
 
         if r.status_code != 200:
-            # Tenta URL alternativa
-            url2 = f"https://www.mercadolivre.com.br/produto/{item_id}"
-            r = requests.get(url2, headers=headers, timeout=15)
-            print(f"Status página alt: {r.status_code}")
+            print("❌ API retornou erro.")
+            return None
 
-        html = r.text
+        data = r.json()
 
-        # Extrai dados do JSON-LD
-        if '"@type":"Product"' in html or '"@type": "Product"' in html:
-            try:
-                inicio = html.find('"@type":"Product"')
-                if inicio == -1:
-                    inicio = html.find('"@type": "Product"')
-                bloco = html[max(0, inicio-200):inicio+2000]
-                # Extrai nome
-                nome = ""
-                if '"name":"' in bloco:
-                    nome = bloco.split('"name":"')[1].split('"')[0]
-                # Extrai preço
-                preco = 0
-                if '"price":' in bloco:
-                    preco_str = bloco.split('"price":')[1].split(',')[0].strip().strip('"')
-                    try: preco = float(preco_str)
-                    except: pass
-                # Extrai imagem
-                imagem = ""
-                if '"image":"' in bloco:
-                    imagem = bloco.split('"image":"')[1].split('"')[0]
-                elif '"image":["' in bloco:
-                    imagem = bloco.split('"image":["')[1].split('"')[0]
+        titulo = data.get("title")
+        preco = data.get("price")
+        preco_original = data.get("original_price")
 
-                if nome:
-                    print(f"✅ Dados extraídos do JSON-LD: {nome[:50]}")
-                    return {"title": nome, "price": preco, "original_price": None,
-                            "thumbnail": imagem, "shipping": {"free_shipping": "Frete grátis" in html}}
-            except Exception as e:
-                print(f"Erro JSON-LD: {e}")
-
-        # Extrai título diretamente do HTML
-        titulo = ""
-        if '<h1 class="ui-pdp-title">' in html:
-            titulo = html.split('<h1 class="ui-pdp-title">')[1].split('</h1>')[0].strip()
-        elif '<title>' in html:
-            titulo = html.split('<title>')[1].split('</title>')[0].split('|')[0].strip()
-
-        # Extrai preço
-        preco = 0
-        if '"price":' in html:
-            try:
-                trecho = html.split('"price":')[1][:20]
-                preco = float(trecho.split(',')[0].strip())
-            except: pass
-
-        # Extrai imagem
+        # Imagem principal
         imagem = ""
-        if 'https://http2.mlstatic.com' in html:
-            try:
-                imagem = 'https://http2.mlstatic.com' + html.split('https://http2.mlstatic.com')[1].split('"')[0]
-            except: pass
 
-        if titulo:
-            print(f"✅ Dados extraídos do HTML: {titulo[:50]}")
-            return {"title": titulo, "price": preco, "original_price": None,
-                    "thumbnail": imagem, "shipping": {"free_shipping": "Frete grátis" in html}}
+        pictures = data.get("pictures", [])
 
-        print("❌ Não foi possível extrair dados da página.")
-        return None
+        if pictures and isinstance(pictures, list):
+            imagem = pictures[0].get("secure_url", "")
+
+        # Fallback thumbnail
+        if not imagem:
+            imagem = data.get("secure_thumbnail", "")
+
+        # Frete grátis
+        shipping = data.get("shipping", {})
+        frete_gratis = shipping.get("free_shipping", False)
+
+        print(f"✅ Produto encontrado: {titulo}")
+
+        return {
+            "title": titulo,
+            "price": preco,
+            "original_price": preco_original,
+            "thumbnail": imagem,
+            "shipping": {
+                "free_shipping": frete_gratis
+            }
+        }
 
     except Exception as e:
-        print(f"Erro scraping: {e}")
+        print(f"❌ Erro API ML: {e}")
+
         return None
 
+
+# ============================================================
+# BUSCA OFERTA
+# ============================================================
+
 def buscar_oferta(link_afiliado):
-    """Busca os dados do produto a partir do link de afiliado."""
-    print(f"🔍 Resolvendo link: {link_afiliado}")
+
     item_id = extrair_id_produto(link_afiliado)
 
     if not item_id:
-        print("❌ Não foi possível extrair o ID do produto.")
         return None
 
-    print(f"📦 ID encontrado: {item_id}")
     dados = buscar_detalhes_produto(item_id)
 
     if not dados:
         return None
 
-    titulo      = dados.get("title", "Produto")
-    preco       = dados.get("price", 0)
-    preco_orig  = dados.get("original_price") or preco
-    frete       = dados.get("shipping", {}).get("free_shipping", False)
-    imagem      = dados.get("thumbnail", "").replace("I.jpg", "O.jpg")
+    preco = dados.get("price") or 0
+    preco_original = dados.get("original_price")
 
     desconto = 0
-    if preco_orig and preco_orig > preco:
-        desconto = round((1 - preco / preco_orig) * 100)
+
+    if preco_original and preco_original > preco:
+        desconto = round(
+            (1 - (preco / preco_original)) * 100
+        )
 
     return {
-        "titulo":   titulo,
-        "preco":    preco,
-        "original": preco_orig,
+        "titulo": dados.get("title", "Produto"),
+        "preco": preco,
+        "original": preco_original,
         "desconto": desconto,
-        "frete":    frete,
-        "imagem":   imagem,
-        "link":     link_afiliado
+        "frete": dados.get("shipping", {}).get("free_shipping", False),
+        "imagem": dados.get("thumbnail", ""),
+        "link": link_afiliado
     }
 
-def montar_mensagem(p):
-    texto  = f"🔥 *{p['titulo']}*\n\n"
-    if p["desconto"] > 0:
-        texto += f"De: ~R$ {p['original']:.2f}~\n"
-    texto += f"💰 Por Apenas: *R$ {p['preco']:.2f}*"
-    if p["desconto"] > 0:
-        texto += f" (*{p['desconto']}% OFF*)"
-    if p["frete"]:
-        texto += f"\n✅ *Frete Grátis*"
-    texto += f"\n\n🛒 *Comprar agora:* {p['link']}"
+
+# ============================================================
+# MONTA MENSAGEM
+# ============================================================
+
+def montar_mensagem(produto):
+
+    texto = f"🔥 *{produto['titulo']}*\n\n"
+
+    # Preço antigo
+    if (
+        produto["original"]
+        and produto["original"] > produto["preco"]
+    ):
+        texto += (
+            f"💸 De: ~R$ {formatar_preco(produto['original'])}~\n"
+        )
+
+    # Preço atual
+    texto += (
+        f"💰 Por apenas: *R$ {formatar_preco(produto['preco'])}*"
+    )
+
+    # Desconto
+    if produto["desconto"] > 0:
+        texto += f" (*{produto['desconto']}% OFF*)"
+
+    # Frete
+    if produto["frete"]:
+        texto += "\n🚚 *Frete Grátis*"
+
+    texto += f"\n\n🛒 *Comprar agora:*\n{produto['link']}"
+
     return texto
 
-def enviar_whatsapp(texto, imagem):
-    headers = {"apikey": EVOLUTION_APIKEY, "Content-Type": "application/json"}
 
-    # Tenta enviar com imagem
-    url = f"{EVOLUTION_URL.rstrip('/')}/message/sendMedia/{EVOLUTION_INSTANCE}"
-    body = {"number": GRUPO_ID, "mediatype": "image", "media": imagem, "caption": texto}
+# ============================================================
+# ENVIO WHATSAPP
+# ============================================================
+
+def enviar_whatsapp(texto, imagem=None):
+
+    headers = {
+        "apikey": EVOLUTION_APIKEY,
+        "Content-Type": "application/json"
+    }
+
+    # ========================================================
+    # ENVIA COM IMAGEM
+    # ========================================================
+
+    if imagem:
+
+        try:
+
+            url = (
+                f"{EVOLUTION_URL.rstrip('/')}"
+                f"/message/sendMedia/{EVOLUTION_INSTANCE}"
+            )
+
+            payload = {
+                "number": GRUPO_ID,
+                "mediatype": "image",
+                "media": imagem,
+                "caption": texto
+            }
+
+            print("📤 Enviando mensagem com imagem...")
+
+            r = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+
+            print(f"📶 Status envio imagem: {r.status_code}")
+
+            if r.status_code in [200, 201]:
+                print("✅ Mensagem enviada com imagem!")
+                return True
+
+            print(f"⚠️ Falha envio imagem: {r.text}")
+
+        except Exception as e:
+            print(f"❌ Erro envio imagem: {e}")
+
+    # ========================================================
+    # FALLBACK TEXTO
+    # ========================================================
 
     try:
-        r = requests.post(url, json=body, headers=headers, timeout=15)
-        print(f"Status: {r.status_code}")
+
+        print("📤 Enviando fallback texto...")
+
+        url = (
+            f"{EVOLUTION_URL.rstrip('/')}"
+            f"/message/sendText/{EVOLUTION_INSTANCE}"
+        )
+
+        payload = {
+            "number": GRUPO_ID,
+            "text": texto,
+            "delay": 200,
+            "linkPreview": True
+        }
+
+        r = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+
+        print(f"📶 Status envio texto: {r.status_code}")
 
         if r.status_code in [200, 201]:
-            print("✅ Mensagem com imagem enviada!")
-            return
-
-        # Fallback: envia só texto
-        print("⚠️ Tentando enviar só texto...")
-        url2 = f"{EVOLUTION_URL.rstrip('/')}/message/sendText/{EVOLUTION_INSTANCE}"
-        body2 = {"number": GRUPO_ID, "text": texto, "delay": 200, "linkPreview": True}
-        r2 = requests.post(url2, json=body2, headers=headers, timeout=15)
-        print(f"Status texto: {r2.status_code}")
-        if r2.status_code in [200, 201]:
             print("✅ Mensagem texto enviada!")
+            return True
+
+        print(f"⚠️ Falha envio texto: {r.text}")
+
+        return False
 
     except Exception as e:
-        print(f"❌ Erro: {e}")
+        print(f"❌ Erro envio texto: {e}")
+
+        return False
+
+
+# ============================================================
+# EXECUÇÃO PRINCIPAL
+# ============================================================
 
 def executar():
+
     agora = obter_hora_local()
+
+    # Horário permitido
     if agora.hour < HORA_INICIO or agora.hour >= HORA_FIM:
-        print(f"⏸ Fora do horário ({agora.hour}h BRT). Aguardando...")
+
+        print(
+            f"⏸ Fora do horário "
+            f"({agora.strftime('%H:%M')})"
+        )
+
         return
 
-    print(f"\n🔍 Buscando oferta... ({agora.strftime('%d/%m/%Y %H:%M')})")
+    print(
+        f"\n=============================="
+        f"\n🕒 {agora.strftime('%d/%m/%Y %H:%M')}"
+        f"\n=============================="
+    )
 
+    # Escolhe link aleatório
     link = random.choice(LINKS_AFILIADOS)
+
     produto = buscar_oferta(link)
 
     if not produto:
-        print("❌ Não foi possível buscar o produto.")
+        print("❌ Não foi possível obter produto.")
         return
 
-    print(f"📦 {produto['titulo']}")
-    print(f"💰 R$ {produto['preco']:.2f}")
+    print(f"\n📦 {produto['titulo']}")
+    print(f"💰 R$ {formatar_preco(produto['preco'])}")
 
-    texto  = montar_mensagem(produto)
-    imagem = produto["imagem"]
-    enviar_whatsapp(texto, imagem)
+    mensagem = montar_mensagem(produto)
+
+    enviar_whatsapp(
+        texto=mensagem,
+        imagem=produto["imagem"]
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 if __name__ == "__main__":
-    print("🤖 Bot de Ofertas ML iniciado!")
+
+    print("\n🤖 BOT MERCADO LIVRE INICIADO")
     print(f"📱 Grupo: {GRUPO_ID}")
-    print(f"⏰ Envios a cada {INTERVALO_HORAS}h entre {HORA_INICIO}h e {HORA_FIM}h\n")
+    print(
+        f"⏰ Envio a cada "
+        f"{INTERVALO_HORAS}h "
+        f"entre {HORA_INICIO}h e {HORA_FIM}h"
+    )
+
+    # Primeira execução imediata
     executar()
+
+    # Agenda automática
     schedule.every(INTERVALO_HORAS).hours.do(executar)
+
     while True:
-        schedule.run_pending()
-        time.sleep(30)
+
+        try:
+            schedule.run_pending()
+            time.sleep(30)
+
+        except KeyboardInterrupt:
+            print("\n🛑 Bot encerrado manualmente.")
+            break
+
+        except Exception as e:
+            print(f"❌ Erro no loop principal: {e}")
+            time.sleep(60)
